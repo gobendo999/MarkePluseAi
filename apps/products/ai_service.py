@@ -52,14 +52,29 @@ Valid values for price_verdict: "STRONG_BUY", "FAIR_PRICE", "WAIT_FOR_DROP".
 
         try:
             client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2,
-                ),
-            )
+            models_to_try = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
+            last_error = None
+            response = None
+
+            for model_name in models_to_try:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.2,
+                        ),
+                    )
+                    if response and response.text:
+                        break
+                except Exception as model_err:
+                    last_error = model_err
+                    logger.warning(f"Model {model_name} failed with {model_err}, trying fallback...")
+                    continue
+
+            if not response or not response.text:
+                raise last_error or Exception("All Gemini models failed to generate content.")
 
             result_json = json.loads(response.text)
             return {
