@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',  # Topic 18: PostgreSQL Fulltext Search Engine
     # 3. Third-party Libraries
     'corsheaders',
     'rest_framework',

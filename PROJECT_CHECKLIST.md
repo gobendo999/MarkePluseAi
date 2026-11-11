@@ -94,7 +94,12 @@
 ---
 
 ### Phase 5: High-Speed Search & Big-Data Event Streaming
-- [ ] **Topic 18: Fulltext Search in Django**
+- [x] **Topic 18: Fulltext Search in Django**
+  - [x] PostgreSQL native Fulltext Search with `SearchVector` (weighted: Title 'A', Store 'B')
+  - [x] WebSearch syntax parsing with `SearchQuery(search_type='websearch')`
+  - [x] Relevance scoring & ranking with `SearchRank`
+  - [x] Fuzzy typo tolerance with `TrigramWordSimilarity` (pg_trgm extension)
+  - [x] Multi-column Inverted Index with `GinIndex` and `gin_trgm_ops`
 - [ ] **Topic 24: Integrating Elasticsearch in Django**
 - [ ] **Topic 27: Using Kafka in Django**
 

@@ -2,6 +2,7 @@ import uuid
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+from django.contrib.postgres.indexes import GinIndex
 
 
 # ---------------------------------------------------------
@@ -71,6 +72,12 @@ class Product(models.Model):
         indexes = [
             models.Index(fields=["user", "-created_at"]),
             models.Index(fields=["store_name"]),
+            # Topic 18: Fulltext Search GIN Index with Trigram support for lightning fast lookups & fuzzy search
+            GinIndex(
+                fields=["title", "store_name"],
+                name="product_search_gin_idx",
+                opclasses=["gin_trgm_ops", "gin_trgm_ops"],
+            ),
         ]
         # Level 2 Constraints
         constraints = [

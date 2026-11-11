@@ -2,7 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from django.db.models import Min, Max, Avg
+from django.db.models import Min, Max, Avg, Q
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank, TrigramWordSimilarity
 from django.utils import timezone
 from .pagination import StandardResultsSetPagination
 from .models import Product, PriceHistory
@@ -39,6 +40,25 @@ class ProductViewSet(viewsets.ModelViewSet):
             qs = Product.objects.all()
         else:
             qs = Product.objects.filter(user=user)
+
+        # ---------------------------------------------------------
+        # Topic 18: PostgreSQL Fulltext Search & Trigram Fuzzy Typo Engine
+        # ---------------------------------------------------------
+        query = self.request.query_params.get("search")
+        if query:
+            # ১. Search Vector তৈরি: Title এ Weight 'A', Store Name এ Weight 'B'
+            search_vector = SearchVector("title", weight="A") + SearchVector("store_name", weight="B")
+            search_query = SearchQuery(query, search_type="websearch")
+
+            # ২. SearchRank ও TrigramWordSimilarity (ভুল বানান হলেও শব্দ ধরে ফেলে)
+            qs = (
+                qs.annotate(
+                    rank=SearchRank(search_vector, search_query),
+                    similarity=TrigramWordSimilarity(query, "title"),
+                )
+                .filter(Q(rank__gte=0.03) | Q(similarity__gte=0.3))
+                .order_by("-rank", "-similarity")
+            )
 
         return qs.select_related("user").prefetch_related("price_history")
 
