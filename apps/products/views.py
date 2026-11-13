@@ -212,8 +212,8 @@ class ProductViewSet(viewsets.ModelViewSet):
         )
 
     @extend_schema(
-        summary="Search live products from Star Tech / Marketplaces by keyword",
-        description="Searches live e-commerce websites and returns matching products with prices.",
+        summary="Multi-Store Live Search across Star Tech & Ryans Computers",
+        description="Concurrently queries multiple e-commerce stores (Star Tech + Ryans Computers) and returns combined results with competitor prices.",
         parameters=[
             OpenApiParameter(
                 name="q",
@@ -222,17 +222,28 @@ class ProductViewSet(viewsets.ModelViewSet):
                 required=True,
                 description="Search keyword (e.g. ryzen, keyboard, air fryer)",
             ),
+            OpenApiParameter(
+                name="store",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                enum=["all", "startech", "ryans"],
+                description="Filter by specific store: 'all' (default), 'startech', or 'ryans'",
+            ),
         ],
     )
     @action(detail=False, methods=["get"], url_path="live-search")
     def live_search(self, request):
         query = request.query_params.get("q", "").strip()
+        store = request.query_params.get("store", "all").strip()
         if not query:
             return Response({"error": "Query parameter 'q' is required."}, status=status.HTTP_400_BAD_REQUEST)
-        # স্ক্র্যাপার দিয়ে স্টারটেক থেকে লাইভ সার্চ রেজাল্ট আনা
-        results = ScraperService.search_startech(query=query, limit=5)
+
+        # মাল্টি-স্টোর এগ্রিগেটর দিয়ে স্টারটেক ও রায়ান্স থেকে একই সাথে রেজাল্ট আনা
+        results = ScraperService.search_multi_store(query=query, limit_per_store=4, store=store)
         return Response({
             "query": query,
+            "store_filter": store,
             "count": len(results),
             "results": results,
         }, status=status.HTTP_200_OK)

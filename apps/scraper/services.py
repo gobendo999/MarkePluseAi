@@ -2,6 +2,7 @@ import re
 import json
 import logging
 from decimal import Decimal
+import concurrent.futures
 import requests
 from bs4 import BeautifulSoup
 from django.utils import timezone
@@ -288,3 +289,82 @@ class ScraperService:
         except Exception as e:
             logger.error(f"StarTech search error for '{query}': {e}")
             return []
+
+    @classmethod
+    def search_ryans(cls, query: str, limit: int = 5) -> list:
+        """
+        Ryans Computers লাইভ সার্চ ইঞ্জিন থেকে সরাসরি প্রোডাক্টের নাম, দাম ও লিংক বের করে
+        """
+        try:
+            url = f"https://www.ryans.com/search?search={query}"
+            res = requests.get(url, headers=cls.HEADERS, timeout=12)
+            if res.status_code != 200:
+                return []
+
+            soup = BeautifulSoup(res.text, "html.parser")
+            items = soup.select(".category-single-product")[:limit]
+            results = []
+
+            for item in items:
+                title_tag = item.select_one("p.card-text a")
+                price_tag = item.select_one(".pr-text, .price")
+                img_tag = item.select_one("img")
+
+                if title_tag and price_tag:
+                    title = title_tag.get_text(strip=True)
+                    product_url = title_tag.get("href", "")
+                    raw_price = price_tag.get_text(strip=True)
+                    price = cls._clean_price(raw_price)
+                    image_url = img_tag.get("src", "") if img_tag else ""
+
+                    results.append({
+                        "title": title,
+                        "price": float(price),
+                        "currency": "BDT",
+                        "url": product_url,
+                        "image_url": image_url,
+                        "store_name": "Ryans Computers",
+                    })
+
+            return results
+        except Exception as e:
+            logger.error(f"Ryans search error for '{query}': {e}")
+            return []
+
+    @classmethod
+    def search_multi_store(cls, query: str, limit_per_store: int = 5, store: str = None) -> list:
+        """
+        Multi-Store Aggregator Engine
+        Concurrently queries multiple stores (Star Tech + Ryans Computers) in parallel
+        using ThreadPoolExecutor and merges the combined results.
+        """
+        store_lower = (store or "").strip().lower()
+
+        store_targets = []
+        if store_lower in ["startech", "star tech", "star_tech"]:
+            store_targets = [("Star Tech", cls.search_startech)]
+        elif store_lower in ["ryans", "ryans computers", "ryans_computers"]:
+            store_targets = [("Ryans Computers", cls.search_ryans)]
+        else:
+            # ডিফল্ট: সব প্রতিদ্বন্দ্বী স্টোর প্যারালালে কল হবে
+            store_targets = [
+                ("Star Tech", cls.search_startech),
+                ("Ryans Computers", cls.search_ryans),
+            ]
+
+        aggregated_results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(store_targets)) as executor:
+            future_to_store = {
+                executor.submit(func, query, limit_per_store): name
+                for name, func in store_targets
+            }
+            for future in concurrent.futures.as_completed(future_to_store):
+                store_name = future_to_store[future]
+                try:
+                    items = future.result()
+                    aggregated_results.extend(items)
+                except Exception as exc:
+                    logger.warning(f"Store search failed for {store_name}: {exc}")
+
+        return aggregated_results
+
