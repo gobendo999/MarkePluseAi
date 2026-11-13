@@ -283,3 +283,50 @@ class ProductViewSet(viewsets.ModelViewSet):
             "message": "Product tracked successfully!",
             "product": ProductSerializer(product).data,
         }, status=status.HTTP_201_CREATED)
+
+    # ---------------------------------------------------------
+    # Topic 30: Live WebSocket Test Broadcast Action
+    # Endpoint: POST /api/products/test-broadcast-alert/
+    # ---------------------------------------------------------
+    @extend_schema(
+        summary="Broadcast a test price drop alert to all connected WebSocket clients",
+        description="Emits a simulated live price drop alert to verify WebSocket real-time delivery.",
+    )
+    @action(detail=False, methods=["post"], url_path="test-broadcast-alert")
+    def test_broadcast_alert(self, request):
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return Response({"error": "Channel layer not configured"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        title = request.data.get("title", "AMD Ryzen 5 5600G Desktop Processor")
+        old_price = float(request.data.get("old_price", 14500.0))
+        new_price = float(request.data.get("new_price", 12999.0))
+        drop_percent = round((old_price - new_price) / old_price * 100, 2) if old_price > 0 else 0.0
+
+        test_data = {
+            "product_id": "live-demo-broadcast",
+            "title": title,
+            "old_price": old_price,
+            "new_price": new_price,
+            "currency": "BDT",
+            "drop_percent": drop_percent,
+            "store_name": "Star Tech",
+            "message": f"🔥 Live Price Drop! {title} is now {new_price} BDT (Saved {drop_percent}%)!",
+        }
+
+        async_to_sync(channel_layer.group_send)(
+            "price_alerts",
+            {
+                "type": "price_drop_alert",
+                "data": test_data,
+            }
+        )
+
+        return Response({
+            "status": "success",
+            "message": "WebSocket broadcast alert sent successfully!",
+            "data": test_data,
+        }, status=status.HTTP_200_OK)

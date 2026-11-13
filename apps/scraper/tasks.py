@@ -43,6 +43,38 @@ def scrape_product_task(self, product_id):
                 currency=product.currency,
             )
 
+        # ---------------------------------------------------------
+        # Topic 30: Broadcast Live Price Drop via WebSockets
+        # ---------------------------------------------------------
+        if new_price > 0 and old_price > 0 and new_price < old_price:
+            try:
+                from asgiref.sync import async_to_sync
+                from channels.layers import get_channel_layer
+
+                channel_layer = get_channel_layer()
+                if channel_layer:
+                    drop_percent = round(float((old_price - new_price) / old_price * 100), 1)
+                    alert_payload = {
+                        "product_id": str(product.id),
+                        "title": product.title,
+                        "old_price": float(old_price),
+                        "new_price": float(new_price),
+                        "currency": product.currency,
+                        "drop_percent": drop_percent,
+                        "store_name": product.store_name,
+                        "target_url": product.target_url,
+                        "message": f"🔥 Price dropped by {drop_percent}%! {product.title} is now {new_price} {product.currency}",
+                    }
+                    async_to_sync(channel_layer.group_send)(
+                        "price_alerts",
+                        {
+                            "type": "price_drop_alert",
+                            "data": alert_payload,
+                        }
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to broadcast WebSocket price drop: {e}")
+
         return {
             "success": True,
             "product_id": str(product.id),

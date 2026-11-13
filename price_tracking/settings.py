@@ -29,6 +29,9 @@ ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
+    # 0. ASGI / WebSocket Server (Must be before any django apps)
+    'daphne',
+
     # 1. Modern Admin Interface (Must be before django.contrib.admin)
     'jazzmin',
 
@@ -42,6 +45,7 @@ INSTALLED_APPS = [
     'django.contrib.postgres',  # Topic 18: PostgreSQL Fulltext Search Engine
     # 3. Third-party Libraries
     'corsheaders',
+    'channels',  # Topic 30: Django Channels Real-Time WebSockets
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
@@ -215,3 +219,14 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 # কোনো টাস্ক শুরু হলে তার স্টেট ট্র্যাক করা
 CELERY_TASK_TRACK_STARTED = True
+
+# -------------------------------------------------------------
+# Topic 30: Django Channels & ASGI Configuration
+# -------------------------------------------------------------
+ASGI_APPLICATION = 'price_tracking.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    }
+}
