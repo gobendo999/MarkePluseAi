@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema, extend_schema_view
 from django.db.models import Min, Max, Avg, Q
 from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank, TrigramWordSimilarity
 from django.utils import timezone
@@ -12,6 +12,9 @@ from .permissions import IsOwnerOnly
 from apps.scraper.services import ScraperService
 from apps.scraper.tasks import scrape_product_task
 from .ai_service import MarketIntelligenceAIService
+from django.http import FileResponse
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema, extend_schema_view
+from .pdf_service import ProductReportPDFService
 
 
 @extend_schema_view(
@@ -183,3 +186,100 @@ class ProductViewSet(viewsets.ModelViewSet):
             "remaining_credits": user.credits_balance,
             "ai_insights": ai_result["data"]
         }, status=status.HTTP_200_OK)
+
+    # ---------------------------------------------------------
+    # Custom Action (Topic 48): AI Market Intelligence PDF Export
+    # Endpoint: GET /api/products/{id}/export-pdf/
+    # ---------------------------------------------------------
+    @extend_schema(
+        summary="Generate a downloadable PDF report for a specific product",
+        description="Creates a branded PDF containing product details, historical price logs, and Gemini AI insights.",
+    )
+    @action(detail=True, methods=["get"], url_path="export-pdf")
+    def export_pdf(self, request, pk=None):
+        product = self.get_object()
+
+        # ১. আপনার তৈরি করা PDF সার্ভিস দিয়ে ইন-মেমোরি PDF তৈরি
+        pdf_buffer = ProductReportPDFService.generate_pdf(product)
+
+        # ২. সরাসরি ব্রাউজারে ডাউনলোড রেসপন্স রিটার্ন করা
+        filename = f"MarketPulse_Report_{product.id}.pdf"
+        return FileResponse(
+            pdf_buffer,
+            as_attachment=True,
+            filename=filename,
+            content_type="application/pdf"
+        )
+
+    @extend_schema(
+        summary="Search live products from Star Tech / Marketplaces by keyword",
+        description="Searches live e-commerce websites and returns matching products with prices.",
+        parameters=[
+            OpenApiParameter(
+                name="q",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description="Search keyword (e.g. ryzen, keyboard, air fryer)",
+            ),
+        ],
+    )
+    @action(detail=False, methods=["get"], url_path="live-search")
+    def live_search(self, request):
+        query = request.query_params.get("q", "").strip()
+        if not query:
+            return Response({"error": "Query parameter 'q' is required."}, status=status.HTTP_400_BAD_REQUEST)
+        # স্ক্র্যাপার দিয়ে স্টারটেক থেকে লাইভ সার্চ রেজাল্ট আনা
+        results = ScraperService.search_startech(query=query, limit=5)
+        return Response({
+            "query": query,
+            "count": len(results),
+            "results": results,
+        }, status=status.HTTP_200_OK)
+
+    # ---------------------------------------------------------
+    # Custom Action: One-Click Quick Track from Search Result
+    # Endpoint: POST /api/products/quick-track/
+    # ---------------------------------------------------------
+    @extend_schema(
+        summary="One-click track a product discovered via live search",
+        description="Creates a tracked product directly from URL or search item.",
+    )
+    @action(detail=False, methods=["post"], url_path="quick-track")
+    def quick_track(self, request):
+        target_url = request.data.get("url")
+        target_price = request.data.get("target_price")
+
+        if not target_url:
+            return Response({"error": "'url' is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # স্ক্র্যাপার দিয়ে পুরো প্রোডাক্টের তথ্য সংগ্রহ করা
+        scraped = ScraperService.scrape_product(target_url)
+        if not scraped.get("success"):
+            return Response({"error": scraped.get("error", "Failed to scrape product.")}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ডাটাবেজে প্রোডাক্ট তৈরি করা
+        product = Product.objects.create(
+            user=request.user,
+            title=scraped["title"],
+            target_url=target_url,
+            store_name=scraped.get("store_name", "Generic"),
+            current_price=scraped["price"],
+            currency=scraped.get("currency", "BDT"),
+            target_price=target_price,
+            stock_status=scraped.get("stock_status", "IN_STOCK"),
+            last_scraped_at=timezone.now(),
+        )
+
+        # ইনিশিয়াল প্রাইস হিস্ট্রি সেভ করা
+        if product.current_price > 0:
+            PriceHistory.objects.create(
+                product=product,
+                price=product.current_price,
+                currency=product.currency,
+            )
+
+        return Response({
+            "message": "Product tracked successfully!",
+            "product": ProductSerializer(product).data,
+        }, status=status.HTTP_201_CREATED)

@@ -246,3 +246,45 @@ class ScraperService:
             return Decimal(cleaned)
         except Exception:
             return Decimal("0.00")
+
+    @classmethod
+    def search_startech(cls, query: str, limit: int = 5) -> list:
+        """
+        Star Tech লাইভ সার্চ ইঞ্জিন থেকে সরাসরি প্রোডাক্টের নাম, দাম ও লিংক বের করে
+        """
+        try:
+            url = f"https://www.startech.com.bd/product/search?search={query}"
+            res = requests.get(url, headers=cls.HEADERS, timeout=10)
+            if res.status_code != 200:
+                return []
+
+            soup = BeautifulSoup(res.text, "html.parser")
+            items = soup.select(".p-item")[:limit]
+            results = []
+
+            for item in items:
+                name_tag = item.select_one(".p-item-name a")
+                price_tag = item.select_one(".p-item-price")
+                img_tag = item.select_one(".p-item-img img")
+
+                if name_tag and price_tag:
+                    title = name_tag.text.strip()
+                    product_url = name_tag.get("href", "")
+                    actual_price_tag = price_tag.select_one(".price-new") or price_tag.select_one("span") or price_tag
+                    raw_price = actual_price_tag.text.strip()
+                    price = cls._clean_price(raw_price)
+                    image_url = img_tag.get("src", "") if img_tag else ""
+
+                    results.append({
+                        "title": title,
+                        "price": float(price),
+                        "currency": "BDT",
+                        "url": product_url,
+                        "image_url": image_url,
+                        "store_name": "Star Tech",
+                    })
+
+            return results
+        except Exception as e:
+            logger.error(f"StarTech search error for '{query}': {e}")
+            return []

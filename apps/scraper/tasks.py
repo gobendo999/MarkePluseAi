@@ -54,3 +54,17 @@ def scrape_product_task(self, product_id):
     except Exception as exc:
         # নেটওয়ার্ক সমস্যা হলে ৬০ সেকেন্ড বিরতি দিয়ে রিট্রাই করবে
         raise self.retry(exc=exc, countdown=60)
+@shared_task
+def periodic_scrape_all_active_products():
+    """
+    Topic 48: Celery Beat Periodic Scheduler
+    ডাটাবেজের সব অ্যাক্টিভ প্রোডাক্ট খুঁজে প্রতিটি প্রোডাক্টের জন্য ব্যাকগ্রাউন্ড স্ক্র্যাপিং টাস্ক চালু করে।
+    """
+    active_products = Product.objects.filter(is_deleted=False)
+    dispatched_count = 0
+    for product in active_products:
+        scrape_product_task.delay(product.id)
+        dispatched_count += 1
+    
+    logger.info(f"[Celery Beat] Dispatched {dispatched_count} periodic scrape tasks.")
+    return f"Successfully dispatched {dispatched_count} scraping tasks."
